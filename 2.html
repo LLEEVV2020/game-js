@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8" />
+    <!-- Мобильная вёрстка: масштаб и запрет масштабирования жестами
+         Тема: HTML meta-теги, адаптивная вёрстка -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Beat ’em up JS Tutor — Mobile</title>
+    <style>
+        /* Сброс отступов и включение border-box
+           Тема: CSS-бокс-модель */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Вытягиваем html/body на всю высоту экрана
+           Тема: CSS базовые селекторы, размеры, высота */
+        html,
+        body {
+            height: 100%;
+        }
+
+        /* Центрируем контейнер игры по центру экрана
+           Тема: Flexbox, градиенты, базовый CSS */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            font-family: Arial, Helvetica, sans-serif;
+            color: #fff;
+            overflow: hidden;
+            /* запрещаем скролл, чтобы игра была «фикс» */
+            touch-action: none;
+            /* отключаем стандартные жесты браузера */
+            -webkit-user-select: none;
+            user-select: none;
+            /* запрет выделения текста для мобильных */
+        }
+
+        /* Контейнер игры.
+           - aspect-ratio 3:2, ограничение максимума
+           - width вычисляется как минимум из окна и 900px
+           Тема: CSS: размеры, aspect-ratio, теневые эффекты, расчётные функции */
+        #gameContainer {
+            position: relative;
+            border: 5px solid #e94560;
+            box-shadow: 0 0 30px rgba(233, 69, 96, .5);
+            width: min(100vw - 12px, 900px);
+            height: calc((min(100vw - 12px, 900px)) * 2 / 3);
+            /* поддерживаем 3:2 */
+            max-height: calc(100vh - 16px);
+            aspect-ratio: 3 / 2;
+            background: #0f3460;
+            overflow: hidden;
+        }
+
+        /* Канвас тянется по контейнеру (логический рендер масштабируется трансформом)
+           Тема: Canvas CSS vs реальное пиксельное разрешение */
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: linear-gradient(180deg, #0f3460 0%, #1a1a2e 100%);
+        }
+
+        /* HUD (слева сверху)
+           Тема: Абсолютное позиционирование, типографика */
+        #ui {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            font-size: clamp(12px, 2.2vw, 16px);
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, .8);
+            z-index: 10;
+            pointer-events: none;
+            /* клики проходят сквозь */
+        }
+
+        #ui .row {
+            margin-bottom: 2px;
+        }
+
+        /* Экран Game Over
+           Тема: Центрирование трансформом, z-index, псевдокнопки */
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #e94560;
+            font-size: clamp(28px, 5vw, 42px);
+            font-weight: bold;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, .9);
+            display: none;
+            /* скрыт до проигрыша */
+            z-index: 30;
+        }
+
+        #gameOver button {
+            margin-top: 10px;
+            padding: 10px 18px;
+            font-size: clamp(14px, 2.5vw, 18px);
+            background: #e94560;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: .3s;
+        }
+
+        #gameOver button:hover {
+            background: #ff6b81;
+            transform: scale(1.04);
+        }
+
+        /* Подсказка управления (ПК) — скрываем на мобильных
+           Тема: Абсолютное позиционирование, визуальная подсказка */
+        #controls {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, .6);
+            padding: 6px 8px;
+            border-radius: 6px;
+            z-index: 10;
+        }
+
+        /* Панель заданий (UI обучения JS)
+           Тема: Flex layout, прокрутка, адаптивность */
+        #taskPanel {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            width: 360px;
+            max-width: 44%;
+            z-index: 20;
+            background: rgba(0, 0, 0, .6);
+            border: 1px solid rgba(255, 255, 255, .2);
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            max-height: 60%;
+            overflow: hidden;
+            /* на десктопе скрываем */
+        }
+
+        #taskTitle {
+            font-weight: bold;
+            margin-bottom: 6px;
+            color: #ffda79;
+        }
+
+        #taskText {
+            font-size: 14px;
+            line-height: 1.35;
+            margin-bottom: 8px;
+        }
+
+        #topicRow {
+            font-size: 12px;
+            opacity: .9;
+            margin-top: 6px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, .1);
+            margin-right: 6px;
+            margin-top: 4px;
+        }
+
+        #answerRow {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        #answer {
+            flex: 1;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, .2);
+            background: rgba(255, 255, 255, .1);
+            color: #fff;
+            outline: none;
+            min-width: 0;
+            /* не ломать контейнер */
+        }
+
+        #checkBtn,
+        #skipBtn {
+            padding: 8px 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #checkBtn {
+            background: #20bf6b;
+            color: #fff;
+        }
+
+        #skipBtn {
+            background: #57606f;
+            color: #fff;
+        }
+
+        #feedback {
+            min-height: 20px;
+            margin-top: 6px;
+            font-size: 13px;
+            overflow: auto;
+        }
+
+        .ok {
+            color: #2ed573;
+        }
+
+        .bad {
+            color: #ff6b81;
+        }
+
+        .hint {
+            color: #ffd32a;
+        }
+
+        /* Мобильные кнопки (виртуальный контроллер)
+           Тема: Мобильные UX-паттерны, pointer-events */
+        .mobile-controls {
+            position: absolute;
+            inset: auto 0 0 0;
+            /* прилепить к низу */
+            height: 40%;
+            display: none;
+            /* десктоп скрыт */
+            z-index: 25;
+            pointer-events: none;
+            /* отдельные кнопки включаются */
+        }
+
+        .mobile-side {
+            position: absolute;
+            bottom: 0;
+            width: 50%;
+            height: 100%;
+            display: flex;
+            align-items: flex-end;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        .left-side {
+            left: 0;
+            justify-content: flex-start;
+        }
+
+        .right-side {
+            right: 0;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, .35);
+            border: 2px solid rgba(255, 255, 255, .25);
+            color: #fff;
+            border-radius: 14px;
+            padding: 12px 14px;
+            min-width: 64px;
+            min-height: 64px;
+            font-size: clamp(14px, 2.5vw, 18px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+            touch-action: none;
+            /* блокируем жесты */
+            user-select: none;
+        }
+
+        .btn:active {
+            transform: scale(0.96);
+        }
+
+        .cluster {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        /* D-Pad раскладка
+           Тема: CSS Grid */
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 56px);
+            grid-template-rows: repeat(3, 56px);
+            gap: 6px;
+        }
+
+        .dpad .spacer {
+            width: 56px;
+            height: 56px;
+        }
+
+        .dpad .btn {
+            width: 56px;
+            height: 56px;
+            min-width: auto;
+            min-height: auto;
+        }
+
+        /* Адаптивные правки на маленьких экранах
+           Тема: CSS media queries */
+        @media (max-width: 900px) {
+            #taskPanel {
+                right: 8px;
+                left: 8px;
+                width: auto;
+                max-width: none;
+                top: 0;
+                bottom: 8px;
+                max-height: 45%;
+                overflow: auto;
+                /* на мобилке можно скроллить */
+            }
+
+            #controls {
+                display: none;
+            }
+
+            .mobile-controls {
+                display: block;
+            }
+
+            #ui {
+                font-size: clamp(12px, 3vw, 16px);
+            }
+
+            #taskText {
+                font-size: clamp(12px, 2.6vw, 14px);
+            }
+        }
+
+        /* Когда открыта экранная клавиатура (поле в фокусе), разрешаем прокрутку
+           Тема: Класс-модификатор на body, UX мобильного ввода */
+        .kb-open #taskPanel {
+            overflow: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Игровой контейнер с канвасом и UI
+         Тема: DOM-структура, позиционирование, слои -->
+    <div id="gameContainer">
+        <!-- Игровая сцена
+             Тема: Canvas API (рисование, трансформации) -->
+        <canvas id="gameCanvas" width="900" height="600"></canvas>
+
+        <!-- HUD — состояние игрока
+             Тема: DOM-манипуляции (innerText), форматирование чисел -->
+        <div id="ui">
+            <div class="row">HP: <span id="health">10000</span></div>
+            <div class="row">Score: <span id="score">0</span></div>
+            <div class="row">Wave: <span id="wave">1</span></div>
+            <div class="row">Combo: <span id="combo">0</span></div>
+        </div>
+
+        <!-- Панель заданий — учебный модуль
+             Тема: Работа с массивами/объектами (банк задач), события ввода -->
+        <div id="taskPanel">
+            <div id="taskTitle">Задание</div>
+            <div id="taskText"></div>
+            <div id="topicRow">
+                Тема: <span id="topicBadge" class="badge"></span>
+                Прогресс: <span id="topicProgress" class="badge">0%</span>
+            </div>
+            <div id="answerRow">
+                <!-- inputmode=text — мобильная клавиатура
+                     Тема: События input/focus/blur -->
+                <input id="answer" placeholder="Ваш ответ..." inputmode="text" autocomplete="off" />
+                <button id="checkBtn">Check</button>
+                <button id="skipBtn" title="Пропустить, -10 очков">Skip</button>
+            </div>
+            <div id="feedback"></div>
+        </div>
+
+        <!-- Подсказка управления (ПК)
+             Тема: События клавиатуры -->
+        <div id="controls">WASD — движение | SPACE — удар | J — прыжок | Enter — проверить ответ</div>
+
+        <!-- Экран конца игры
+             Тема: Управление состояниями (game over), обработчики кнопок -->
+        <div id="gameOver">
+            <div>GAME OVER!</div>
+            <div style="font-size: 22px; margin-top: 6px;">Score: <span id="finalScore">0</span></div>
+            <button id="restartBtn">Restart</button>
+        </div>
+
+        <!-- Мобильный контроллер
+             Тема: События touch/mouse, эмуляция нажатий клавиш -->
+        <div class="mobile-controls" id="mobileControls">
+            <div class="mobile-side left-side">
+                <div class="dpad">
+                    <div class="spacer"></div>
+                    <button class="btn" data-key="j" aria-label="Jump">J</button>
+                    <div class="spacer"></div>
+
+                    <button class="btn" data-key="a" aria-label="Left">◀</button>
+                    <div class="spacer"></div>
+                    <button class="btn" data-key="d" aria-label="Right">▶</button>
+
+                    <div class="spacer"></div>
+                    <div class="spacer"></div>
+                    <div class="spacer"></div>
+                </div>
+            </div>
+            <div class="mobile-side right-side">
+                <div class="cluster">
+                    <button class="btn" data-key=" " aria-label="Attack">Удар</button>
+                    <button class="btn" id="mobileCheck" aria-label="Check">Check</button>
+                    <button class="btn" id="mobileSkip" aria-label="Skip">Skip</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Блокируем жесты зума и двойной тап зум на iOS/Android.
+        // Тема: События браузера, passive listeners, мобильный UX.
+        document.addEventListener('gesturestart', e => e.preventDefault());
+        let lastTouch = 0;
+        document.addEventListener('touchend', e => {
+            const now = Date.now();
+            if (now - lastTouch < 300) e.preventDefault(); // предотвращаем двойной тап зум
+            lastTouch = now;
+        }, { passive: false });
+
+        // Получаем 2D-контекст канваса
+        // Тема: DOM API, CanvasRenderingContext2D
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Логические размеры сцены (игровая система считает в 900x600),
+        // а пиксельное разрешение канваса подстраиваем под DPR и контейнер.
+        // Тема: Canvas, devicePixelRatio, трансформации ctx.
+        const baseWidth = 900, baseHeight = 600;
+
+        function resizeCanvasToContainer() {
+            const rect = document.getElementById('gameContainer').getBoundingClientRect();
+            const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // ограничиваем до 2 ради производительности
+            // Устанавливаем реальное разрешение канваса с учётом DPR
+            canvas.width = Math.round(rect.width * dpr);
+            canvas.height = Math.round(rect.height * dpr);
+            // Растягиваем «логическую» систему координат 900x600 на реальное
+            ctx.setTransform(canvas.width / baseWidth, 0, 0, canvas.height / baseHeight, 0, 0);
+        }
+        window.addEventListener('resize', resizeCanvasToContainer);
+        window.addEventListener('orientationchange', () => setTimeout(resizeCanvasToContainer, 100));
+        resizeCanvasToContainer();
+
+        // Глобальное состояние игры.
+        // Тема: Объекты, иммутабельность vs мутабельность, проектирование состояния.
+        let gameState = {
+            running: true,
+            score: 0,
+            wave: 1,
+            enemiesDefeated: 0,
+            combo: 0,
+            slowFactor: 1, // «замедление» врагов при решении задач
+        };
+
+        // Объект игрока с физикой и боевкой.
+        // Тема: Объекты, численные параметры, простая физика, управление вводом.
+        const player = {
+            x: 120, y: 420, width: 42, height: 64,
+            vx: 0, vy: 0, speed: 5, jump: 15, g: 0.8,
+            onGround: true, hp: 10000, maxHp: 10000,
+            attacking: false, atkCd: 0, dir: 1, color: '#00ff9d'
+        };
+        const groundY = 480;
+
+        // Коллекции игровых сущностей
+        // Тема: Массивы, перебиратели, мутации, производительность.
+        let enemies = [];
+        let lastSpawn = 0;
+        const baseSpawn = 1800; // базовая задержка спавна в мс
+        let particles = [];
+
+        // Система ввода с клавиатуры + мобильные кнопки.
+        // keys — словарь, где флаг true/false = нажата/отпущена.
+        // Тема: События клавиатуры, нормализация ввода, key vs code.
+        const keys = {};
+        addEventListener('keydown', e => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key === 'Enter') checkAnswer(); // Enter = проверить ответ
+        });
+        addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+        // Привязка мобильных кнопок: при касании/клике меняем состояние keys
+        // Тема: События touch/mouse, preventDefault, доступность ARIA.
+        function bindTouchButton(el, key) {
+            const down = (ev) => { ev.preventDefault(); keys[key] = true; };
+            const up = (ev) => { ev.preventDefault(); keys[key] = false; };
+            el.addEventListener('touchstart', down, { passive: false });
+            el.addEventListener('touchend', up, { passive: false });
+            el.addEventListener('touchcancel', up, { passive: false });
+            el.addEventListener('mousedown', down);
+            el.addEventListener('mouseup', up);
+            el.addEventListener('mouseleave', up);
+        }
+        document.querySelectorAll('.btn[data-key]').forEach(b => {
+            const key = b.getAttribute('data-key');
+            bindTouchButton(b, key);
+        });
+        document.getElementById('mobileCheck').addEventListener('touchstart', (e) => { e.preventDefault(); checkAnswer(); });
+        document.getElementById('mobileSkip').addEventListener('touchstart', (e) => { e.preventDefault(); skipTask(); });
+
+        // Управление прокруткой панели заданий при фокусе на инпут (для экранной клавиатуры).
+        // Тема: События focus/blur, классы на body, scrollIntoView.
+        const answerInput = document.getElementById('answer');
+        answerInput.addEventListener('focus', () => {
+            document.body.classList.add('kb-open');
+            setTimeout(() => answerInput.scrollIntoView({ block: 'center', behavior: 'smooth' }), 100);
+        });
+        answerInput.addEventListener('blur', () => {
+            document.body.classList.remove('kb-open');
+        });
+
+        // Банк учебных задач по JS.
+        // Каждая тема (topics) содержит items. item: { q, a, norm? }.
+        // norm — опциональная функция нормализации ответа (регистронезависимость и т.п.).
+        // Тема: Массивы/объекты, данные конфигурации, функции высшего порядка.
+        const topics = [
+            {
+                id: 'variables', title: 'Переменные', items: [
+                    { q: 'Чему будет равно x после: let x = 2; x += 3; ?', a: '5' },
+                    { q: 'typeof null ?', a: 'object', norm: v => v.toLowerCase() },
+                    { q: 'let a=1; const b="2"; a+b = ?', a: '12' },
+                ]
+            },
+            {
+                id: 'types', title: 'Типы и сравнения', items: [
+                    { q: 'true == "1" ?', a: 'true', norm: v => v.toLowerCase() },
+                    { q: '0 == false ?', a: 'true', norm: v => v.toLowerCase() },
+                    { q: '0 === false ?', a: 'false', norm: v => v.toLowerCase() },
+                ]
+            },
+            {
+                id: 'arrays', title: 'Массивы', items: [
+                    { q: '[1,2,3].push(4); длина?', a: '4' },
+                    { q: '[1,2,3].map(x=>x*2)[1] = ?', a: '4' },
+                    { q: '[1,2,3].filter(x=>x>1).length = ?', a: '2' },
+                ]
+            },
+            {
+                id: 'functions', title: 'Функции', items: [
+                    { q: '(function(){return 3})()', a: '3' },
+                    { q: 'let f=a=>a+2; f(5)=?', a: '7' },
+                    { q: 'Арность функции (x,y,z)=>x ?', a: '3' },
+                ]
+            },
+            {
+                id: 'conditions', title: 'Условия', items: [
+                    { q: 'x=5; результат x>3?"A":"B" ?', a: 'A', norm: v => v.toUpperCase() },
+                    { q: 'x=0; !!x ?', a: 'false', norm: v => v.toLowerCase() },
+                    { q: 'x=undefined; x??"ok" ?', a: 'ok', norm: v => v.toLowerCase() },
+                ]
+            },
+            {
+                id: 'loops', title: 'Циклы', items: [
+                    { q: 'let s=0; for(let i=0;i<3;i++) s+=i; s=?', a: '3' },
+                    { q: '[..."hi"].length = ?', a: '2' },
+                    { q: 'for..of по "ab": последняя буква?', a: 'b' },
+                ]
+            },
+            {
+                id: 'objects', title: 'Объекты', items: [
+                    { q: 'let o={a:1}; "a" in o ?', a: 'true', norm: v => v.toLowerCase() },
+                    { q: 'JSON.parse("1") тип?', a: 'number', norm: v => v.toLowerCase() },
+                    { q: 'Object.keys({a:1,b:2}).length = ?', a: '2' },
+                ]
+            },
+            {
+                id: 'strings', title: 'Строки', items: [
+                    { q: '"a"+"b".toUpperCase() = ?', a: 'aB' },
+                    { q: '"Hello".slice(1,3)= ?', a: 'el' },
+                    { q: '"foo".includes("o") ?', a: 'true', norm: v => v.toLowerCase() },
+                ]
+            },
+            {
+                id: 'this', title: 'this и стрелочные', items: [
+                    { q: 'typeof (()=>{}).prototype ?', a: 'undefined', norm: v => v.toLowerCase() },
+                    { q: 'this в стрелке берётся из?', a: 'контекста', norm: v => v.toLowerCase() },
+                    { q: 'obj.m.call(null) — this = ?', a: 'null', norm: v => v.toLowerCase() },
+                ]
+            },
+            {
+                id: 'closures', title: 'Замыкания', items: [
+                    { q: 'Функция, хранящая доступ к внешним переменным — это?', a: 'замыкание', norm: v => v.toLowerCase() },
+                    { q: 'let x=1; function f(){return x} f()=?', a: '1' },
+                    { q: 'let add=n=>m=>n+m; add(2)(3)=?', a: '5' },
+                ]
+            },
+            {
+                id: 'prototypes', title: 'Прототипы', items: [
+                    { q: 'Object.getPrototypeOf({}) === Object.prototype ?', a: 'true', norm: v => v.toLowerCase() },
+                    { q: '[].__proto__ === Array.prototype ?', a: 'true', norm: v => v.toLowerCase() },
+                    { q: 'new Date() instanceof Object ?', a: 'true', norm: v => v.toLowerCase() },
+                ]
+            },
+            {
+                id: 'async', title: 'Промисы/async', items: [
+                    { q: 'Promise.resolve(1).then(x=>x+1) -> значение в then?', a: '2' },
+                    { q: 'await 5 возвращает?', a: '5' },
+                    { q: 'setTimeout(...,0) — попадает в?', a: 'macrotask', norm: v => v.toLowerCase() },
+                ]
+            },
+        ];
+
+        // Прогресс по темам: считаем сколько решено (done) из total.
+        // Тема: Object.fromEntries, Array.map, базовая структура данных.
+        const topicProgress = Object.fromEntries(
+            topics.map(t => [t.id, { done: 0, total: t.items.length }])
+        );
+
+        // Текущая тема/задача, и счётчик ошибок подряд.
+        // Тема: Управление состоянием, ветвления, UX подсказок.
+        let currentTopic = null;
+        let currentTask = null;
+        let wrongStreak = 0;
+
+        // Укороченная выборка DOM-элементов
+        // Тема: querySelector, ссылки на элементы.
+        const $ = sel => document.querySelector(sel);
+        const taskText = $('#taskText');
+        const taskTitle = $('#taskTitle');
+        const topicBadge = $('#topicBadge');
+        const topicProgressEl = $('#topicProgress');
+        const feedback = $('#feedback');
+        const checkBtn = $('#checkBtn');
+        const skipBtn = $('#skipBtn');
+
+        // Выбор темы: на ранних волнах ограничиваем пул,
+        // сортируем по наименьшему прогрессу — подтягиваем слабые места.
+        // Тема: Сортировка, срезы массива, арифметика, стратегии обучения.
+        function pickTopic() {
+            const wave = gameState.wave;
+            const biasIndex = Math.min(topics.length - 1, Math.floor((wave - 1) / 2));
+            const candidates = topics.slice(0, Math.max(4, biasIndex + 1));
+            candidates.sort((a, b) => {
+                const pa = topicProgress[a.id].done / topicProgress[a.id].total;
+                const pb = topicProgress[b.id].done / topicProgress[b.id].total;
+                return pa - pb;
+            });
+            return candidates[0];
+        }
+        // Берём следующую нерешённую задачу по теме (иначе — случайную из темы).
+        // Тема: Логика выбора, Math.random, контроль прогресса.
+        function pickTaskFrom(topic) {
+            const prog = topicProgress[topic.id];
+            if (prog.done >= prog.total) return topic.items[Math.floor(Math.random() * topic.items.length)];
+            return topic.items[prog.done];
+        }
+        // Загружаем новую задачу: обновляем UI, сбрасываем фидбек, слегка замедляем врагов.
+        // Тема: DOM обновления, строки/числа, плавная сложность.
+        function loadNewTask() {
+            currentTopic = pickTopic();
+            currentTask = pickTaskFrom(currentTopic);
+            taskTitle.textContent = 'Задание';
+            taskText.textContent = currentTask.q;
+            topicBadge.textContent = currentTopic.title;
+            const prog = topicProgress[currentTopic.id];
+            topicProgressEl.textContent = Math.round((prog.done / prog.total) * 100) + '%';
+            feedback.textContent = ''; feedback.className = '';
+            answerInput.value = '';
+            gameState.slowFactor = 0.5; // пока думаете — немного тормозим врагов
+        }
+        // Нормализация ответа (обрезка, приведение регистра и т.п.)
+        // Тема: Строки, функции как данные (norm-хуки).
+        function normalize(v, task) {
+            const s = (v ?? '').toString().trim();
+            if (task.norm) return task.norm(s);
+            return s;
+        }
+        // Сравнение ответа
+        // Тема: Чистые функции, возврат булевых значений.
+        function isCorrect(user, task) {
+            return normalize(user, task) === normalize(task.a, task);
+        }
+        // Эффект частиц (визуальный фидбек)
+        // Тема: Массив объектов, случайность, простая анимация частиц.
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 10; i++) {
+                particles.push({ x, y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 28, color });
+            }
+        }
+        // Награды за правильный ответ: наносим урон ближайшему врагу, получаем очки/комбо, иногда бафф скорости.
+        // Тема: Работа с массивами (копия/сортировка), Math.sign, игровые механики.
+        function grantRewards() {
+            const nearest = enemies.slice().sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
+            let damage = 35 + gameState.wave * 3;
+            const combo = Math.min(10, gameState.combo);
+            damage += combo * 4;
+            gameState.score += 50 + combo * 10;
+
+            if (nearest) {
+                nearest.hp -= damage;
+                createParticles(nearest.x + nearest.width / 2, nearest.y + nearest.height / 2, '#ffe66d');
+                nearest.x += Math.sign(nearest.x - player.x) * 20; // отбрасываем
+            } else {
+                // Если врагов нет — подхилимся слегка
+                player.hp = Math.min(player.maxHp, player.hp + 5);
+            }
+
+            // Каждые 3 комбо — кратковременный бонус к скорости
+            if (gameState.combo > 0 && gameState.combo % 3 === 0) {
+                player.speed = 6.5;
+                setTimeout(() => player.speed = 5, 2000);
+            }
+        }
+        // Штраф за неправильный ответ: теряем HP, усиливается замедление.
+        // Тема: Границы значений, визуальный фидбек, баланс.
+        function applyPenalty() {
+            player.hp -= 6;
+            createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff6b81');
+            const prev = gameState.slowFactor;
+            gameState.slowFactor = Math.max(0.4, prev - 0.1);
+        }
+        // Генерация подсказок по ключевым словам вопроса
+        // Тема: Строковые операции, эвристики, UX.
+        function makeHint(task) {
+            const q = task.q.toLowerCase();
+            if (q.includes('typeof null')) return 'Историческая особенность языка — это не "null".';
+            if (q.includes('==') && !q.includes('===')) return 'При == происходит приведение типов.';
+            if (q.includes('arrow') || q.includes('стрел')) return 'Стрелочные не имеют собственного this.';
+            if (q.includes('json.parse')) return 'Парс строки числа вернёт число.';
+            if (q.includes('slice')) return 'slice(start, end) — end не включительно.';
+            if (q.includes('settimeout')) return 'setTimeout идёт в очередь макрозадач (macrotask).';
+            return '';
+        }
+        // Проверка ответа: обновляем прогресс, очки/комбо/штрафы, выдаём подсказки при серийных ошибках.
+        // Тема: Управление состоянием, DOM-обновления, UX фидбек.
+        function checkAnswer() {
+            if (!currentTask) return;
+            const val = answerInput.value;
+            if (isCorrect(val, currentTask)) {
+                feedback.textContent = 'Верно!'; feedback.className = 'ok';
+                wrongStreak = 0; gameState.combo += 1;
+                const prog = topicProgress[currentTopic.id];
+                if (prog.done < prog.total) prog.done += 1;
+                grantRewards();
+                setTimeout(loadNewTask, 300);
+            } else {
+                wrongStreak += 1; gameState.combo = 0;
+                feedback.textContent = 'Нет, попробуйте ещё'; feedback.className = 'bad';
+                applyPenalty();
+                if (wrongStreak >= 2) {
+                    const hint = makeHint(currentTask);
+                    if (hint) {
+                        const div = document.createElement('div'); div.className = 'hint';
+                        div.textContent = 'Подсказка: ' + hint; feedback.appendChild(div);
+                    }
+                }
+            }
+        }
+        // Пропустить задачу: -10 очков, сброс комбо, показ следующей
+        // Тема: Простая экономика очков, UX-кнопки.
+        function skipTask() {
+            gameState.score = Math.max(0, gameState.score - 10);
+            gameState.combo = 0;
+            feedback.textContent = 'Пропущено (-10)'; feedback.className = 'bad';
+            wrongStreak = 0;
+            loadNewTask();
+        }
+        document.getElementById('checkBtn').addEventListener('click', checkAnswer);
+        document.getElementById('skipBtn').addEventListener('click', skipTask);
+
+        // Логика движения и атаки игрока.
+        // Тема: Простая физика (скорости, ускорение), столкновения с землёй.
+        function updatePlayer() {
+            player.vx = 0;
+            if (keys['a']) { player.vx = -player.speed; player.dir = -1; }
+            if (keys['d']) { player.vx = player.speed; player.dir = 1; }
+            if (keys['j'] && player.onGround) { player.vy = -player.jump; player.onGround = false; }
+            if (keys[' '] && !player.attacking && player.atkCd <= 0) {
+                player.attacking = true; player.atkCd = 18; attackHit();
+            }
+
+            player.x += player.vx; player.y += player.vy;
+            if (!player.onGround) player.vy += player.g;
+
+            // Приземление
+            if (player.y + player.height >= groundY) {
+                player.y = groundY - player.height; player.vy = 0; player.onGround = true;
+            }
+
+            // Ограничение по горизонтали
+            player.x = Math.max(0, Math.min(baseWidth - player.width, player.x));
+
+            // Кулдаун атаки
+            if (player.atkCd > 0) player.atkCd--;
+            if (player.attacking && player.atkCd <= 0) player.attacking = false;
+        }
+
+        // Отрисовка игрока (простая геометрия, плюс хитбокс атаки)
+        // Тема: Canvas API: fillStyle, fillRect, простые формы.
+        function drawPlayer() {
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Примитивная «голова»/«глаза»
+            ctx.fillStyle = '#ffcc00';
+            ctx.fillRect(player.x + 6, player.y - 16, 30, 20);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(player.x + 12, player.y - 12, 5, 5);
+            ctx.fillRect(player.x + 25, player.y - 12, 5, 5);
+
+            // Хитбокс атаки (полупрозрачный прямоугольник)
+            if (player.attacking) {
+                ctx.fillStyle = 'rgba(255,255,0,.45)';
+                const ax = player.dir === 1 ? player.x + player.width : player.x - 34;
+                ctx.fillRect(ax, player.y + 10, 34, 22);
+            }
+
+            // Полоса HP над игроком
+            ctx.fillStyle = '#ff3b3b';
+            ctx.fillRect(player.x, player.y - 10, player.width, 5);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect(player.x, player.y - 10, player.width * (player.hp / player.maxHp), 5);
+        }
+
+        // Проверка попадания по врагам в зоне атаки
+        // Тема: Геометрия, расстояния, условные проверки.
+        function attackHit() {
+            const range = 62;
+            const ax = player.dir === 1 ? player.x + player.width : player.x - range;
+            enemies.forEach(e => {
+                const dx = e.x - ax;
+                const dy = Math.abs(e.y - player.y);
+                if (Math.abs(dx) < range && dy < 84) {
+                    e.hp -= 14; e.x += player.dir * 16;
+                    createParticles(e.x + e.width / 2, e.y + e.height / 2, '#ffff00');
+                }
+            });
+        }
+
+        // Создание врага: параметры зависят от волны
+        // Тема: Фабрики объектов, шкалирование сложности.
+        function spawnEnemy() {
+            const side = Math.random() > 0.5 ? 1 : -1;
+            const hp = 40 + gameState.wave * 12;
+            const speed = (1.1 + gameState.wave * 0.22);
+            return {
+                x: side === 1 ? -60 : baseWidth + 60,
+                y: groundY - 54,
+                width: 38, height: 54,
+                hp, maxHp: hp,
+                speed, dir: side, atkCd: 0,
+                color: `hsl(${Math.random() * 360},70%,50%)`
+            };
+        }
+
+        // Логика врагов: спавн, приближение к игроку, атака, смерть, прогресс волн.
+        // Тема: Тайминг (timestamp из RAF), массивы, баланс параметров, частичные «AI».
+        function updateEnemies(ts) {
+            const spawnRate = Math.max(700, baseSpawn - gameState.wave * 120);
+            if (!lastSpawn || ts - lastSpawn > spawnRate) {
+                enemies.push(spawnEnemy()); lastSpawn = ts;
+            }
+
+            enemies.forEach((e, i) => {
+                const dx = player.x - e.x;
+                const dist = Math.abs(dx);
+                const factor = gameState.slowFactor;
+
+                // Двигаемся к игроку
+                if (dist > 50) {
+                    e.x += Math.sign(dx) * e.speed * factor;
+                    e.dir = Math.sign(dx);
+                }
+
+                // Атакуем при близкой дистанции и отсутствии кулдауна
+                if (dist < 60 && e.atkCd <= 0) {
+                    player.hp -= 5;
+                    e.atkCd = Math.max(45, 70 - gameState.wave * 2); // с ростом волны атакуют чаще
+                    createParticles(player.x + player.width / 2, player.y + player.height / 2, '#ff3b3b');
+                }
+
+                if (e.atkCd > 0) e.atkCd--;
+
+                // Смерть врага
+                if (e.hp <= 0) {
+                    enemies.splice(i, 1);
+                    gameState.score += 120;
+                    gameState.enemiesDefeated++;
+                    createParticles(e.x + e.width / 2, e.y + e.height / 2, e.color);
+
+                    // Каждые 6 убийств — новая волна, слегка ускоряем врагов (сбрасываем замедление к 0.8)
+                    if (gameState.enemiesDefeated % 6 === 0) {
+                        gameState.wave++; gameState.slowFactor = 0.8;
+                    }
+                }
+            });
+
+            // Медленное возвращение slowFactor к 1 (враги ускоряются обратно)
+            gameState.slowFactor += (1 - gameState.slowFactor) * 0.01;
+        }
+
+        // Отрисовка врагов (простая графика + полоски HP)
+        // Тема: Canvas, перебор массивов, относительные координаты.
+        function drawEnemies() {
+            enemies.forEach(e => {
+                ctx.fillStyle = e.color;
+                ctx.fillRect(e.x, e.y, e.width, e.height);
+
+                // «голова» и «глаза»
+                ctx.fillStyle = '#333'; ctx.fillRect(e.x + 5, e.y - 12, 26, 16);
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(e.x + 8, e.y - 8, 4, 4);
+                ctx.fillRect(e.x + 20, e.y - 8, 4, 4);
+
+                // Полоса hp
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(e.x, e.y - 8, e.width, 4);
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(e.x, e.y - 8, e.width * (e.hp / e.maxHp), 4);
+            });
+        }
+
+        // Анимация частиц: движение, «гравитация», жизнь
+        // Тема: Игровые циклы, убывающий таймер жизни, обратный цикл удаления.
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.28;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+        // Рисуем частицы с затуханием альфы
+        // Тема: Canvas глобальная прозрачность, простейшие спрайты.
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life / 28;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, 4, 4);
+                ctx.globalAlpha = 1;
+            });
+        }
+
+        // Фон: земля и линия горизонта
+        // Тема: Базовые примитивы Canvas (fillRect, stroke).
+        function drawBackground() {
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillRect(0, groundY, baseWidth, baseHeight - groundY);
+            ctx.strokeStyle = '#34495e'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(baseWidth, groundY); ctx.stroke();
+        }
+
+        // Обновление HUD
+        // Тема: DOM API, округление чисел.
+        function updateUI() {
+            document.getElementById('health').textContent = Math.max(0, Math.round(player.hp));
+            document.getElementById('score').textContent = gameState.score;
+            document.getElementById('wave').textContent = gameState.wave;
+            document.getElementById('combo').textContent = gameState.combo;
+        }
+
+        // Проверка конца игры
+        // Тема: Управление состояниями, отображение/скрытие DOM-элементов.
+        function checkGameOver() {
+            if (player.hp <= 0) {
+                gameState.running = false;
+                document.getElementById('gameOver').style.display = 'block';
+                document.getElementById('finalScore').textContent = gameState.score;
+            }
+        }
+
+        // Перезапуск: полный сброс состояния и прогресса
+        // Тема: Инициализация состояния, повторный запуск игрового цикла.
+        function restart() {
+            player.hp = 10000; player.x = 120; player.y = 420;
+            enemies = []; particles = [];
+            gameState = { running: true, score: 0, wave: 1, enemiesDefeated: 0, combo: 0, slowFactor: 1 };
+            Object.keys(topicProgress).forEach(id => topicProgress[id].done = 0);
+            document.getElementById('gameOver').style.display = 'none';
+            loadNewTask(); gameLoop();
+        }
+        document.getElementById('restartBtn').addEventListener('click', restart);
+
+        // Главный игровой цикл: update -> draw -> requestAnimationFrame
+        // ts — high-resolution timestamp от RAF
+        // Тема: Игровые циклы, пошаговая логика, порядок вызовов.
+        function gameLoop(ts = 0) {
+            if (!gameState.running) return;
+            ctx.clearRect(0, 0, baseWidth, baseHeight);
+
+            drawBackground();
+            updatePlayer();
+            updateEnemies(ts);
+            updateParticles();
+
+            drawPlayer();
+            drawEnemies();
+            drawParticles();
+
+            updateUI();
+            checkGameOver();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Дублируем кнопки Check/Skip для кликов на мобилке (кроме touchstart выше)
+        // Тема: События мыши, доступность.
+        document.getElementById('mobileCheck').addEventListener('click', checkAnswer);
+        document.getElementById('mobileSkip').addEventListener('click', skipTask);
+
+        // Инициализация обучения и старт цикла
+        // Тема: Точка входа, порядок инициализации.
+        loadNewTask();
+        gameLoop();
+    </script>
+</body>
+
+</html>
